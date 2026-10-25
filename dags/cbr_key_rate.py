@@ -1,4 +1,4 @@
-"""Daily CBR key rate: raw -> stg -> DQ -> dds (MERGE). Periods are served by mart.key_rate_periods."""
+"""Daily CBR key rate: raw -> stg -> DQ -> dds (MERGE). Marts are built by the cbr_dbt DAG."""
 import os
 from datetime import date, timedelta
 
@@ -7,6 +7,7 @@ from airflow.decorators import dag, task
 
 from cbr_etl import client, dq, dwh, parsers
 from cbr_etl.airflow_utils import dwh_conn, notify_failure
+from cbr_etl.datasets import FCT_KEY_RATE
 
 # Each run re-reads two weeks: covers weekends, holidays and late publication
 LOOKBACK_DAYS = 14
@@ -53,7 +54,7 @@ def cbr_key_rate():
             dq.run_checks(conn, "key_rate", dq.KEY_RATE_CHECKS, {"load_id": load_id}, run_id)
         return load_id
 
-    @task
+    @task(outlets=[FCT_KEY_RATE])
     def load_dds(load_id: int) -> None:
         with dwh_conn() as conn:
             dwh.run_sql_file(conn, "key_rate_stg_to_dds.sql", {"load_id": load_id})

@@ -1,0 +1,40 @@
+version: 2
+
+models:
+  - name: currency_rate_daily
+    description: >
+      Daily rates with day-over-day change, moving averages over 7 and 30 trading days
+      and the key rate in effect on the date. Exported to ClickHouse.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [rate_date, currency_id]
+    columns:
+      - name: rate_date
+        data_tests: [not_null]
+      - name: char_code
+        data_tests: [not_null]
+      - name: vunit_rate
+        data_tests: [not_null]
+      - name: key_rate
+        description: Key rate in effect on rate_date (as-of join)
+      - name: updated_at
+        description: Watermark for the incremental export to ClickHouse
+
+  - name: key_rate_periods
+    description: Periods during which the key rate stayed the same
+    columns:
+      - name: period_no
+        data_tests: [unique, not_null]
+      - name: rate
+        data_tests: [not_null]
+
+  - name: currency_rate_monthly
+    description: Monthly statistics per currency
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [month, char_code]
+    columns:
+      - name: trading_days
+        data_tests: [not_null]

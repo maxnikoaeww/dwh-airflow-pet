@@ -1,6 +1,8 @@
-# DWH на данных ЦБ РФ: Airflow + PostgreSQL + ClickHouse
+# DWH на данных ЦБ РФ: Airflow + dbt + PostgreSQL + ClickHouse
 
-Учебно-демонстрационное хранилище данных: ежедневная загрузка официальных курсов валют и ключевой ставки Банка России, слоистая архитектура DWH, инкрементальная загрузка, SCD Type 2, проверки качества данных и аналитическая витрина в ClickHouse. Всё поднимается одной командой в Docker.
+Пошаговая экскурсия по всем инструментам — в [docs/GUIDE.md](docs/GUIDE.md).
+
+Учебно-демонстрационное хранилище данных: ежедневная загрузка официальных курсов валют и ключевой ставки Банка России, слоистая архитектура DWH, инкрементальная загрузка, SCD Type 2, проверки качества данных, витрины и тесты на dbt и аналитическая витрина в ClickHouse. Всё поднимается одной командой в Docker.
 
 ## Архитектура
 
@@ -10,10 +12,10 @@ flowchart LR
     subgraph PG [PostgreSQL DWH]
         RAW[raw<br/>ответы как есть] --> STG[stg<br/>типизированные строки]
         STG -->|DQ checks| DDS[dds<br/>факты + SCD2]
-        DDS --> MART[mart<br/>витрины]
+        DDS -->|dbt build| MART[mart<br/>витрины dbt]
         META[meta<br/>результаты DQ]
     end
-    MART -->|export| CH[(ClickHouse<br/>ReplacingMergeTree)]
+    MART -->|инкрементальный export| CH[(ClickHouse<br/>ReplacingMergeTree)]
     AF{{Airflow}} -.оркестрация.-> PG
     AF -.-> CH
 ```
@@ -23,7 +25,7 @@ flowchart LR
 | `raw` | `cbr_response` | Ответ API сохраняется без изменений вместе с параметрами запроса: перезагрузку можно повторить без обращения к источнику |
 | `stg` | `currency_rate`, `currency_ref`, `key_rate` | Разобранные и типизированные строки, привязанные к `load_id` |
 | `dds` | `fct_currency_rate`, `fct_key_rate`, `dim_currency` | `MERGE` с хэш-сравнением (меняются только изменённые строки); справочник валют — SCD Type 2 |
-| `mart` | `currency_rate_daily`, `key_rate_periods` | Изменение курса день к дню, скользящие средние за 7/30 торговых дней, ключевая ставка на дату (as-of join), периоды действия ставки (gaps and islands) |
+| `mart` (dbt) | `currency_rate_daily` (incremental), `key_rate_periods`, `currency_rate_monthly` | Изменение курса день к дню, скользящие средние за 7/30 торговых дней, ключевая ставка на дату (as-of join), периоды действия ставки (gaps and islands), месячная статистика и волатильность. 19 тестов dbt |
 | `meta` | `dq_result` | История всех проверок качества |
 
 ## DAG'и
@@ -31,12 +33,14 @@ flowchart LR
 | DAG | Расписание | Шаги |
 |---|---|---|
 | `cbr_currency_ref` | раз в неделю | extract → stage → DQ → SCD2 в `dim_currency` |
-| `cbr_currency_rates` | ежедневно, catchup с `CBR_START_DATE` | extract → stage → DQ → MERGE в dds → пересборка витрины за 7 дней → экспорт в ClickHouse |
+| `cbr_currency_rates` | ежедневно, catchup с `CBR_START_DATE` | extract → stage → DQ → MERGE в dds |
 | `cbr_key_rate` | ежедневно, catchup | extract (окно 14 дней) → stage → DQ → MERGE в dds |
+| `cbr_dbt` | по Airflow Datasets: когда обновились оба факта | `dbt test` источников → `dbt build` (модели + тесты) → инкрементальный экспорт в ClickHouse по watermark `updated_at` |
 
 Решения, на которые стоит обратить внимание:
-- **Идемпотентность.** Любой запуск можно перезапустить или прогнать бэкфиллом: stage заменяет строки своего `load_id`, dds обновляется через `MERGE`, витрина пересобирается за окно, ClickHouse схлопывает дубли через `ReplacingMergeTree(updated_at)`.
+- **Идемпотентность.** Любой запуск можно перезапустить или прогнать бэкфиллом: stage заменяет строки своего `load_id`, dds обновляется через `MERGE`, инкрементальная модель dbt пересобирает последние 7 дней, ClickHouse схлопывает дубли через `ReplacingMergeTree(updated_at)`.
 - **Data Quality.** Проверки с уровнями `error` (останавливает пайплайн) и `warn` (только фиксируется): минимальное число строк, положительные значения, уникальность ключа, формат ISO-кода, дата курса рядом с логической датой запуска, скачок курса больше 20 %.
+- **dbt.** Слой витрин — dbt-проект в `dbt/`: staging-модели над dds, инкрементальная витрина (`delete+insert`), собственный generic-тест `unique_combination`, singular-тесты, тесты и freshness источников, документация и lineage (`dbt docs`).
 - **Выходные и праздники.** ЦБ не устанавливает курсы на эти дни, поэтому дата курса берётся из ответа, а не из даты запуска. Ключевая ставка каждый раз перечитывается за 14 дней.
 - **Надёжность.** Ретраи HTTP с экспоненциальной задержкой, ретраи задач Airflow, алерт о падении в лог и, по желанию, в Telegram.
 
@@ -51,9 +55,10 @@ docker compose up -d --build
 
 - Airflow: http://localhost:8080 (логин и пароль `admin` / `admin`)
 - PostgreSQL DWH: `localhost:5432`, база `dwh`, пользователь `dwh` / `dwh`
-- ClickHouse: http://localhost:8123, пользователь `dwh` / `dwh`
+- ClickHouse: http://localhost:8123/play, пользователь `dwh` / `dwh`
+- dbt docs: http://localhost:8081 (после `dbt docs serve`, см. GUIDE)
 
-В Airflow включите DAG'и в таком порядке: `cbr_currency_ref` (запустите вручную) → `cbr_key_rate` → `cbr_currency_rates`. Бэкфилл с `CBR_START_DATE` запустится автоматически.
+В Airflow включите DAG'и в таком порядке: `cbr_currency_ref` (запустите вручную) → `cbr_key_rate` → `cbr_currency_rates` → `cbr_dbt`. Бэкфилл с `CBR_START_DATE` запустится автоматически, а `cbr_dbt` будет срабатывать по мере обновления фактов.
 
 ## Примеры запросов
 
@@ -95,10 +100,9 @@ python -m pytest -q
 
 ## Стек
 
-Apache Airflow 2.10 (TaskFlow API, LocalExecutor) · PostgreSQL 16 (MERGE, оконные функции, LATERAL) · ClickHouse 24.8 (ReplacingMergeTree) · Python 3.12 (requests, psycopg2, clickhouse-connect) · Docker Compose · pytest · GitHub Actions
+Apache Airflow 2.10 (TaskFlow API, Datasets, LocalExecutor) · dbt (dbt-postgres, incremental models, tests, docs) · PostgreSQL 16 (MERGE, оконные функции, LATERAL) · ClickHouse 24.8 (ReplacingMergeTree) · Python 3.12 (requests, psycopg2, clickhouse-connect) · Docker Compose · pytest · GitHub Actions
 
 ## Что дальше
 
-- Перенести трансформации dds → mart в **dbt** с тестами моделей
 - Дашборд в **Apache Superset** поверх ClickHouse
 - Поток событий через **Kafka** (например, публиковать изменения курсов)

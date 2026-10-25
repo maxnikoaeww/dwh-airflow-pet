@@ -1,0 +1,26 @@
+version: 2
+
+sources:
+  - name: dds
+    description: Detail layer loaded by Airflow (MERGE from stg)
+    schema: dds
+    tables:
+      - name: fct_currency_rate
+        loaded_at_field: updated_at
+        freshness:
+          warn_after: { count: 4, period: day }
+        columns:
+          - name: rate_date
+            data_tests: [not_null]
+          - name: currency_id
+            data_tests: [not_null]
+        data_tests:
+          - unique_combination:
+              arguments:
+                columns: [rate_date, currency_id]
+      - name: fct_key_rate
+        columns:
+          - name: rate_date
+            data_tests: [unique, not_null]
+      - name: dim_currency
+        description: SCD Type 2 currency reference

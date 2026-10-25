@@ -4,3 +4,7 @@ __pycache__/
 .venv/
 .env
 logs/
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+dbt/.user.yml

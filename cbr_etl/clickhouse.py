@@ -1,9 +1,9 @@
-"""Export of the currency mart from PostgreSQL to ClickHouse."""
+"""Incremental export of the dbt mart from PostgreSQL to ClickHouse by an updated_at watermark."""
 import os
-from datetime import date
 
 import clickhouse_connect
 
+TABLE = "currency_rate_daily"
 COLUMNS = ["rate_date", "currency_id", "char_code", "name", "nominal", "value", "vunit_rate",
            "prev_vunit_rate", "change_pct", "ma_7", "ma_30", "key_rate", "updated_at"]
 
@@ -18,14 +18,17 @@ def _client():
     )
 
 
-def export_currency_mart(pg_conn, date_from: date) -> int:
+def export_currency_mart(pg_conn) -> int:
+    ch = _client()
+    # Rows rebuilt by dbt get a fresh updated_at, so only they pass the watermark
+    watermark = ch.command(f"SELECT toString(max(updated_at)) FROM {TABLE}")
     with pg_conn.cursor() as cur:
         cur.execute(
-            f"SELECT {', '.join(COLUMNS[:-1])}, updated_at::timestamp(0) "
-            "FROM mart.currency_rate_daily WHERE rate_date >= %s",
-            (date_from,),
+            f"SELECT {', '.join(COLUMNS[:-1])}, date_trunc('second', updated_at)::timestamp "
+            "FROM mart.currency_rate_daily WHERE date_trunc('second', updated_at)::timestamp > %s::timestamp",
+            (watermark,),
         )
         rows = cur.fetchall()
     if rows:
-        _client().insert("currency_rate_daily", rows, column_names=COLUMNS)
+        ch.insert(TABLE, rows, column_names=COLUMNS)
     return len(rows)

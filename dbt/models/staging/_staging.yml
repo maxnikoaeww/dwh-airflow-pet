@@ -1,0 +1,19 @@
+version: 2
+
+models:
+  - name: stg_currency_rate
+    description: Daily official exchange rates, one row per date and currency
+    columns:
+      - name: vunit_rate
+        description: Rate for one unit of currency in RUB
+        data_tests: [not_null]
+      - name: char_code
+        data_tests: [not_null]
+  - name: stg_key_rate
+    description: Key rate of the Bank of Russia by business day
+  - name: stg_dim_currency
+    description: Currency versions (SCD2), valid_to is exclusive
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [currency_id, valid_from]

@@ -1,5 +1,5 @@
 x-airflow-common: &airflow-common
-  build: .
+  # The image is built once by airflow-init and reused by the other services
   image: dwh-airflow-pet/airflow:latest
   environment: &airflow-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
@@ -19,10 +19,17 @@ x-airflow-common: &airflow-common
     TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
     TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
     PYTHONPATH: /opt/airflow
+    # dbt profile (dbt/profiles.yml reads these)
+    DWH_HOST: postgres
+    DWH_PORT: "5432"
+    DWH_USER: dwh
+    DWH_PASSWORD: ${DWH_PASSWORD:-dwh}
+    DBT_PROFILES_DIR: /opt/airflow/dbt
   volumes:
     - ./dags:/opt/airflow/dags
     - ./cbr_etl:/opt/airflow/cbr_etl
     - ./sql:/opt/airflow/sql
+    - ./dbt:/opt/airflow/dbt
     - airflow-logs:/opt/airflow/logs
   depends_on: &airflow-depends
     postgres:
@@ -67,6 +74,7 @@ services:
 
   airflow-init:
     <<: *airflow-common
+    build: .
     command: version
     environment:
       <<: *airflow-env
@@ -80,6 +88,7 @@ services:
     command: webserver
     ports:
       - "8080:8080"
+      - "8081:8081"   # dbt docs serve (see docs/GUIDE.md)
     restart: unless-stopped
     depends_on:
       <<: *airflow-depends

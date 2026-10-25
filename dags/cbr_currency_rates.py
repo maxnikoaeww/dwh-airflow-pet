@@ -1,4 +1,4 @@
-"""Daily CBR exchange rates: raw -> stg -> DQ -> dds (MERGE) -> mart -> ClickHouse."""
+"""Daily CBR exchange rates: raw -> stg -> DQ -> dds (MERGE). Marts are built by the cbr_dbt DAG."""
 import os
 from datetime import date, timedelta
 
@@ -7,9 +7,7 @@ from airflow.decorators import dag, task
 
 from cbr_etl import client, dq, dwh, parsers
 from cbr_etl.airflow_utils import dwh_conn, notify_failure
-
-# The mart is rebuilt for a short window, so late corrections of past days are picked up
-MART_REBUILD_DAYS = 7
+from cbr_etl.datasets import FCT_CURRENCY_RATE
 
 DEFAULT_ARGS = {
     "owner": "data-eng",
@@ -50,29 +48,12 @@ def cbr_currency_rates():
             dq.run_checks(conn, "currency_rate", dq.CURRENCY_RATE_CHECKS, {"load_id": load_id, "ds": ds}, run_id)
         return load_id
 
-    @task
+    @task(outlets=[FCT_CURRENCY_RATE])
     def load_dds(load_id: int) -> None:
         with dwh_conn() as conn:
             dwh.run_sql_file(conn, "rates_stg_to_dds.sql", {"load_id": load_id})
 
-    @task
-    def build_mart(ds=None) -> str:
-        date_from = date.fromisoformat(ds) - timedelta(days=MART_REBUILD_DAYS)
-        with dwh_conn() as conn:
-            dwh.run_sql_file(conn, "mart_currency_rate_daily.sql", {"date_from": date_from})
-        return date_from.isoformat()
-
-    @task
-    def export_clickhouse(date_from: str) -> int:
-        from cbr_etl.clickhouse import export_currency_mart
-
-        with dwh_conn() as conn:
-            return export_currency_mart(conn, date.fromisoformat(date_from))
-
-    loaded = load_dds(quality(stage(extract())))
-    mart_from = build_mart()
-    loaded >> mart_from
-    export_clickhouse(mart_from)
+    load_dds(quality(stage(extract())))
 
 
 cbr_currency_rates()
