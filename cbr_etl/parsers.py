@@ -70,3 +70,15 @@ def parse_key_rate(xml: str) -> list[dict]:
         {"rate_date": date.fromisoformat(_text(kr, "DT")[:10]), "rate": _decimal(_text(kr, "Rate"))}
         for kr in _root(xml).iter("KR")
     ]
+
+
+def parse_metal_prices(xml: str) -> list[dict]:
+    return [
+        {
+            "price_date": datetime.strptime(rec.attrib["Date"], "%d.%m.%Y").date(),
+            "metal_code": int(rec.attrib["Code"]),
+            "buy": _decimal(_text(rec, "Buy")),
+            "sell": _decimal(_text(rec, "Sell")),
+        }
+        for rec in _root(xml).iter("Record")
+    ]

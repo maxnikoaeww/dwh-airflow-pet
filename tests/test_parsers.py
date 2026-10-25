@@ -52,3 +52,10 @@ def test_key_rate():
     assert rows
     assert all(isinstance(r["rate_date"], date) and isinstance(r["rate"], Decimal) for r in rows)
     assert {"rate_date": date(2026, 10, 23), "rate": Decimal("14.00")} in rows
+
+
+def test_metal_prices():
+    rows = parsers.parse_metal_prices(_read("metall.xml", "cp1251"))
+    assert {r["metal_code"] for r in rows} == {1, 2, 3, 4}
+    assert {"price_date": date(2026, 10, 20), "metal_code": 1,
+            "buy": Decimal("11158.77"), "sell": Decimal("11158.77")} in rows

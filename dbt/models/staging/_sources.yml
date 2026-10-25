@@ -24,3 +24,15 @@ sources:
             data_tests: [unique, not_null]
       - name: dim_currency
         description: SCD Type 2 currency reference
+      - name: fct_metal_price
+        description: Precious metal prices, RUB per gram
+        columns:
+          - name: metal_code
+            data_tests:
+              - accepted_values:
+                  arguments:
+                    values: [1, 2, 3, 4]
+        data_tests:
+          - unique_combination:
+              arguments:
+                columns: [price_date, metal_code]

@@ -1,0 +1,12 @@
+version: 2
+
+seeds:
+  - name: metal_codes
+    description: Reference of CBR precious metal codes
+    config:
+      schema: dbt_staging
+      column_types:
+        metal_code: smallint
+    columns:
+      - name: metal_code
+        data_tests: [unique, not_null]

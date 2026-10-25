@@ -38,3 +38,15 @@ models:
     columns:
       - name: trading_days
         data_tests: [not_null]
+
+  - name: metal_price_daily
+    description: Metal prices in RUB per gram and USD per troy ounce
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [price_date, metal_code]
+    columns:
+      - name: metal_name
+        data_tests: [not_null]
+      - name: price_usd_per_ounce
+        description: Null only before the first USD rate in the DWH

@@ -1,6 +1,6 @@
 """dbt marts on top of dds, then incremental export to ClickHouse.
 
-Runs when both facts (currency rates and key rate) have been updated: Airflow Datasets.
+Runs when both currency rates and key rate were updated, or metal prices were: Airflow Datasets.
 """
 from datetime import timedelta
 
@@ -9,7 +9,7 @@ from airflow.decorators import dag, task
 from airflow.operators.bash import BashOperator
 
 from cbr_etl.airflow_utils import dwh_conn, notify_failure
-from cbr_etl.datasets import FCT_CURRENCY_RATE, FCT_KEY_RATE
+from cbr_etl.datasets import FCT_CURRENCY_RATE, FCT_KEY_RATE, FCT_METAL_PRICE
 
 DBT = "cd /opt/airflow/dbt && dbt --no-use-colors"
 
@@ -23,7 +23,7 @@ DEFAULT_ARGS = {
 
 @dag(
     dag_id="cbr_dbt",
-    schedule=[FCT_CURRENCY_RATE, FCT_KEY_RATE],
+    schedule=(FCT_CURRENCY_RATE & FCT_KEY_RATE) | FCT_METAL_PRICE,
     start_date=pendulum.datetime(2026, 1, 1, tz="Europe/Moscow"),
     catchup=False,
     max_active_runs=1,
@@ -35,6 +35,7 @@ def cbr_dbt():
     source_tests = BashOperator(task_id="dbt_source_tests", bash_command=f"{DBT} test --select source:*")
     # build = run models + run their tests in DAG order; a failed test stops downstream models
     build = BashOperator(task_id="dbt_build", bash_command=f"{DBT} build --exclude source:*")
+    # seeds are part of `dbt build`: metal_codes.csv is loaded before the models that use it
 
     @task
     def export_clickhouse() -> int:

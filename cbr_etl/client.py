@@ -56,3 +56,14 @@ def fetch_key_rate(date_from: date, date_to: date) -> str:
     )
     resp.raise_for_status()
     return resp.content.decode("utf-8")
+
+
+METALS_URL = "https://www.cbr.ru/scripts/xml_metall.asp"
+
+
+def fetch_metal_prices(date_from: date, date_to: date) -> str:
+    """Precious metal prices (RUB per gram) for the period."""
+    params = {"date_req1": date_from.strftime("%d/%m/%Y"), "date_req2": date_to.strftime("%d/%m/%Y")}
+    resp = _session().get(METALS_URL, params=params, timeout=TIMEOUT)
+    resp.raise_for_status()
+    return resp.content.decode("cp1251")

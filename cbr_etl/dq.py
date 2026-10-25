@@ -64,6 +64,20 @@ CURRENCY_REF_CHECKS = [
 ]
 
 
+METAL_PRICE_CHECKS = [
+    Check("rows_not_empty",
+          "SELECT CASE WHEN count(*) = 0 THEN 1 ELSE 0 END FROM stg.metal_price WHERE load_id = %(load_id)s"),
+    Check("known_metal_code",
+          "SELECT count(*) FROM stg.metal_price WHERE load_id = %(load_id)s AND metal_code NOT IN (1, 2, 3, 4)"),
+    Check("positive_prices",
+          "SELECT count(*) FROM stg.metal_price WHERE load_id = %(load_id)s "
+          "AND (buy IS NULL OR sell IS NULL OR buy <= 0 OR sell <= 0)"),
+    Check("unique_date_metal",
+          "SELECT count(*) - count(DISTINCT (price_date, metal_code)) FROM stg.metal_price "
+          "WHERE load_id = %(load_id)s"),
+]
+
+
 def run_checks(conn, dataset: str, checks: list[Check], params: dict, dag_run_id: str | None) -> None:
     failed_errors = []
     with conn.cursor() as cur:

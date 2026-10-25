@@ -17,3 +17,12 @@ models:
       - unique_combination:
           arguments:
             columns: [currency_id, valid_from]
+  - name: stg_metal_price
+    description: Precious metal prices by business day
+    columns:
+      - name: metal_code
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('metal_codes')
+                field: metal_code
