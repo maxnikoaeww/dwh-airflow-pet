@@ -28,9 +28,10 @@ CURRENCY_RATE_CHECKS = [
     Check("char_code_iso_format",
           "SELECT count(*) FROM stg.currency_rate WHERE load_id = %(load_id)s "
           "AND char_code !~ '^[A-Z]{3}$'"),
+    # CBR sets no rates on holidays: after New Year the latest rate can be 12 days old
     Check("rate_date_near_logical_date",
           "SELECT count(*) FROM stg.currency_rate WHERE load_id = %(load_id)s "
-          "AND rate_date NOT BETWEEN %(ds)s::date - 10 AND %(ds)s::date + 1"),
+          "AND rate_date NOT BETWEEN %(ds)s::date - 14 AND %(ds)s::date + 1"),
     Check("day_change_below_20pct",
           """SELECT count(*)
              FROM stg.currency_rate s

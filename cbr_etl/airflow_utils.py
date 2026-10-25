@@ -2,11 +2,17 @@
 import logging
 import os
 from contextlib import contextmanager
+from datetime import date
 
 import requests
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 log = logging.getLogger(__name__)
+
+
+def moscow_date(logical_date) -> date:
+    """Business date of a run. `ds` is rendered in UTC: midnight in Moscow is still the previous day there."""
+    return logical_date.in_timezone("Europe/Moscow").date()
 
 
 @contextmanager

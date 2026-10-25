@@ -1,12 +1,12 @@
 """Daily CBR key rate: raw -> stg -> DQ -> dds (MERGE). Marts are built by the cbr_dbt DAG."""
 import os
-from datetime import date, timedelta
+from datetime import timedelta
 
 import pendulum
 from airflow.decorators import dag, task
 
 from cbr_etl import client, dq, dwh, parsers
-from cbr_etl.airflow_utils import dwh_conn, notify_failure
+from cbr_etl.airflow_utils import dwh_conn, moscow_date, notify_failure
 from cbr_etl.datasets import FCT_KEY_RATE
 
 # Each run re-reads two weeks: covers weekends, holidays and late publication
@@ -33,8 +33,8 @@ DEFAULT_ARGS = {
 )
 def cbr_key_rate():
     @task
-    def extract(ds=None, run_id=None) -> int:
-        date_to = date.fromisoformat(ds)
+    def extract(logical_date=None, run_id=None) -> int:
+        date_to = moscow_date(logical_date)
         date_from = date_to - timedelta(days=LOOKBACK_DAYS)
         payload = client.fetch_key_rate(date_from, date_to)
         with dwh_conn() as conn:

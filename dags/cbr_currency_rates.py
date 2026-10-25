@@ -1,12 +1,12 @@
 """Daily CBR exchange rates: raw -> stg -> DQ -> dds (MERGE). Marts are built by the cbr_dbt DAG."""
 import os
-from datetime import date, timedelta
+from datetime import timedelta
 
 import pendulum
 from airflow.decorators import dag, task
 
 from cbr_etl import client, dq, dwh, parsers
-from cbr_etl.airflow_utils import dwh_conn, notify_failure
+from cbr_etl.airflow_utils import dwh_conn, moscow_date, notify_failure
 from cbr_etl.datasets import FCT_CURRENCY_RATE
 
 DEFAULT_ARGS = {
@@ -30,10 +30,11 @@ DEFAULT_ARGS = {
 )
 def cbr_currency_rates():
     @task
-    def extract(ds=None, run_id=None) -> int:
-        payload = client.fetch_daily_rates(date.fromisoformat(ds))
+    def extract(logical_date=None, run_id=None) -> int:
+        on_date = moscow_date(logical_date)
+        payload = client.fetch_daily_rates(on_date)
         with dwh_conn() as conn:
-            return dwh.insert_raw(conn, "cbr_daily", {"date_req": ds}, payload, run_id)
+            return dwh.insert_raw(conn, "cbr_daily", {"date_req": on_date.isoformat()}, payload, run_id)
 
     @task
     def stage(load_id: int) -> int:
@@ -43,9 +44,10 @@ def cbr_currency_rates():
         return load_id
 
     @task
-    def quality(load_id: int, ds=None, run_id=None) -> int:
+    def quality(load_id: int, logical_date=None, run_id=None) -> int:
+        params = {"load_id": load_id, "ds": moscow_date(logical_date)}
         with dwh_conn() as conn:
-            dq.run_checks(conn, "currency_rate", dq.CURRENCY_RATE_CHECKS, {"load_id": load_id, "ds": ds}, run_id)
+            dq.run_checks(conn, "currency_rate", dq.CURRENCY_RATE_CHECKS, params, run_id)
         return load_id
 
     @task(outlets=[FCT_CURRENCY_RATE])
